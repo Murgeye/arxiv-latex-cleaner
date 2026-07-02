@@ -58,6 +58,19 @@ python setup.py install
     (such as `\todo{}` that you redefine as the empty string at the end).
 *   Optionally allows you to define custom regex replacement rules through a
     `cleaner_config.yaml` file.
+*   Optionally cleans your `.bib` files with `clean_bib`: removes entries
+    that are not cited anywhere in the kept `.tex` files (entries pulled in
+    via a cited entry's `crossref`/`xdata` field are kept too), and strips
+    fields that are pure reference-manager bookkeeping and never rendered by
+    any bibliography style (`abstract`, `file`, `keywords`, `mendeley-tags`,
+    `timestamp`, `issn`, `isbn`, `language`, etc.). Fields that some styles
+    *do* render — `doi`, `url`, `note`, `month`, `eprint`, and the like — are
+    left untouched by default, since removing them could change how your
+    bibliography looks; add them with `bib_fields_to_delete` once you've
+    confirmed your own style doesn't use them. Also strips all
+    `@comment{...}` blocks, including ones wrapping a whole disabled entry.
+    Implies `keep_bib`. Fields can be protected from removal with
+    `bib_fields_to_keep`.
 
 #### Size-oriented
 
@@ -126,6 +139,9 @@ usage: arxiv_latex_cleaner@v1.0.11 [-h] [--resize_images] [--im_size IM_SIZE]
                                    [--pdf_im_resolution PDF_IM_RESOLUTION]
                                    [--images_allowlist IMAGES_ALLOWLIST]
                                    [--keep_bib]
+                                   [--clean_bib]
+                                   [--bib_fields_to_delete BIB_FIELDS_TO_DELETE [BIB_FIELDS_TO_DELETE ...]]
+                                   [--bib_fields_to_keep BIB_FIELDS_TO_KEEP [BIB_FIELDS_TO_KEEP ...]]
                                    [--commands_to_delete COMMANDS_TO_DELETE [COMMANDS_TO_DELETE ...]]
                                    [--commands_only_to_delete COMMANDS_ONLY_TO_DELETE [COMMANDS_ONLY_TO_DELETE ...]]
                                    [--environments_to_delete ENVIRONMENTS_TO_DELETE [ENVIRONMENTS_TO_DELETE ...]]
@@ -161,6 +177,34 @@ optional arguments:
                         --pdf_im_resolution, respectively. Format is a
                         dictionary as: '{"path/to/im.jpg": 1000}'
   --keep_bib            Avoid deleting the *.bib files.
+  --clean_bib           Clean the *.bib files instead of just copying them
+                        verbatim: removes entries that are not cited (via
+                        \cite, \citep, \citet, \parencite, \autocite, \nocite,
+                        etc.) anywhere in the kept .tex files, and strips
+                        fields that are pure reference-manager bookkeeping and
+                        never rendered by any bibliography style (e.g.
+                        abstract, file, keywords, mendeley-tags, timestamp,
+                        issn, isbn, language). Fields that some styles DO
+                        render, such as doi, url, note, month, or eprint, are
+                        left untouched by default; use --bib_fields_to_delete
+                        to strip those too if you've confirmed your
+                        bibliography style doesn't use them. Also strips all
+                        '@comment{...}' blocks, including ones wrapping a
+                        whole disabled entry. Entries pulled in via a kept
+                        entry's 'crossref'/'xdata' field are kept too. Implies
+                        --keep_bib.
+  --bib_fields_to_delete BIB_FIELDS_TO_DELETE [BIB_FIELDS_TO_DELETE ...]
+                        Additional BibTeX field names to strip from every kept
+                        entry when --clean_bib is set, on top of the built-in
+                        list of always-safe fields (abstract, file, keywords,
+                        mendeley-tags, timestamp, issn, isbn, language, etc.).
+                        Use this for fields that some bibliography styles
+                        render (e.g. doi, url, note, month, eprint) once
+                        you've confirmed your own style doesn't use them.
+  --bib_fields_to_keep BIB_FIELDS_TO_KEEP [BIB_FIELDS_TO_KEEP ...]
+                        BibTeX field names to always keep when --clean_bib
+                        is set, overriding both the built-in and
+                        user-provided --bib_fields_to_delete lists.
   --commands_to_delete COMMANDS_TO_DELETE [COMMANDS_TO_DELETE ...]
                         LaTeX commands that will be deleted. Useful for e.g.
                         user-defined \todo commands. For example, to delete
