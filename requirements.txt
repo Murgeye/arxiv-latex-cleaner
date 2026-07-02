@@ -1,4 +1,5 @@
 absl_py>=0.12
+bibtexparser>=1.4.0,<2
 pillow
 pyyaml
 regex

@@ -26,6 +26,10 @@ import tempfile
 from PIL import Image
 import regex
 
+from .bib_cleaner import clean_bib_file
+from .bib_cleaner import DEFAULT_BIB_FIELDS_TO_DELETE
+from .bib_cleaner import find_cited_keys
+
 PDF_RESIZE_COMMAND = (
     'gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dNOPAUSE -dQUIET -dBATCH '
     '-dDownsampleColorImages=true -dColorImageResolution={resolution} '
@@ -707,6 +711,32 @@ def _copy_only_referenced_non_tex_not_in_root(parameters, contents, splits):
   ):
     _copy_file(fn, parameters)
 
+
+def _clean_referenced_bib_files(parameters, contents, splits):
+  """Removes uncited entries and unnecessary fields from copied .bib files."""
+  bib_files = _keep_pattern(
+      splits['non_tex_in_root']
+      + _keep_only_referenced(
+          splits['non_tex_not_in_root'], contents, strict=True
+      ),
+      [r'\.bib$'],
+  )
+  if not bib_files:
+    return
+
+  cited_keys = find_cited_keys(contents)
+  fields_to_delete = DEFAULT_BIB_FIELDS_TO_DELETE + parameters.get(
+      'bib_fields_to_delete', []
+  )
+  fields_to_keep = parameters.get('bib_fields_to_keep', [])
+
+  for bib_file in bib_files:
+    out_path = os.path.join(parameters['output_folder'], bib_file)
+    logging.info('Cleaning bib file %s.', bib_file)
+    clean_bib_file(
+        out_path, out_path, cited_keys, fields_to_delete, fields_to_keep
+    )
+
 def _resize_and_copy_figures_if_referenced(parameters, contents, splits):
     """Modified to handle PNG to JPG conversion and reference updates."""
     image_size = collections.defaultdict(lambda: parameters['im_size'])
@@ -924,6 +954,10 @@ def run_arxiv_cleaner(parameters):
       r'\.fdb_latexmk$',
   ]
 
+  if parameters.get('clean_bib', False):
+    # Cleaning the bib files is pointless if they get deleted afterwards.
+    parameters['keep_bib'] = True
+
   if not parameters['keep_bib']:
     files_to_delete.append(r'\.bib$')
 
@@ -1005,6 +1039,9 @@ def run_arxiv_cleaner(parameters):
     for non_tex_file in splits['non_tex_in_root']:
       logging.info('Copying non-tex file %s.', non_tex_file)
       _copy_file(non_tex_file, parameters)
+
+    if parameters.get('clean_bib', False):
+      _clean_referenced_bib_files(parameters, full_content, splits)
 
     filename_changes = _resize_and_copy_figures_if_referenced(parameters, full_content, splits)
     logging.info('Outputs written to %s', parameters['output_folder'])

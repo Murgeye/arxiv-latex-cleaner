@@ -90,6 +90,53 @@ PARSER.add_argument(
 )
 
 PARSER.add_argument(
+    "--clean_bib",
+    action="store_true",
+    help=(
+        "Clean the *.bib files instead of just copying them verbatim: "
+        "removes entries that are not cited (via \\cite, \\citep, \\citet, "
+        "\\parencite, \\autocite, \\nocite, etc.) anywhere in the kept .tex "
+        "files, and strips fields that are pure reference-manager "
+        "bookkeeping and never rendered by any bibliography style (e.g. "
+        "abstract, file, keywords, mendeley-tags, timestamp, issn, isbn, "
+        "language). Fields that some styles DO render, such as doi, url, "
+        "note, month, or eprint, are left untouched by default; use "
+        "--bib_fields_to_delete to strip those too if you've confirmed "
+        "your bibliography style doesn't use them. Also strips all "
+        "'@comment{...}' blocks, including ones wrapping a whole disabled "
+        "entry. Entries pulled in via a kept entry's 'crossref'/'xdata' "
+        "field are kept too. Implies --keep_bib."
+    ),
+)
+
+PARSER.add_argument(
+    "--bib_fields_to_delete",
+    nargs="+",
+    default=[],
+    required=False,
+    help=(
+        "Additional BibTeX field names to strip from every kept entry when "
+        "--clean_bib is set, on top of the built-in list of always-safe "
+        "fields (abstract, file, keywords, mendeley-tags, timestamp, issn, "
+        "isbn, language, etc.). Use this for fields that some bibliography "
+        "styles render (e.g. doi, url, note, month, eprint) once you've "
+        "confirmed your own style doesn't use them."
+    ),
+)
+
+PARSER.add_argument(
+    "--bib_fields_to_keep",
+    nargs="+",
+    default=[],
+    required=False,
+    help=(
+        "BibTeX field names to always keep when --clean_bib is set, "
+        "overriding both the built-in and user-provided "
+        "--bib_fields_to_delete lists."
+    ),
+)
+
+PARSER.add_argument(
     "--commands_to_delete",
     nargs="+",
     default=[],
