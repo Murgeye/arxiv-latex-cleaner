@@ -24,10 +24,12 @@ import regex
 # \parencite, \Autocite, \citeauthor, and \nocite, capturing the
 # comma-separated key list inside the mandatory {...} argument. Optional
 # `[...]` pre/post-note arguments (as used by \citep[see][]{key}) are
-# skipped.
+# skipped. TeX skips whitespace after a control word, so '\cite {key}' (and
+# whitespace around the '*' or the optional arguments) is a valid citation
+# and must be matched too.
 CITE_COMMAND_PATTERN = regex.compile(
-    r'\\(?:[A-Za-z]*[Cc]ite[A-Za-z]*|[Nn]ocite)\*?'
-    r'(?:\[[^\]]*\])*\{([^}]*)\}'
+    r'\\(?:[A-Za-z]*[Cc]ite[A-Za-z]*|[Nn]ocite)\s*\*?'
+    r'\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}'
 )
 
 # Matches '@comment{...}' blocks, treating everything between the outer
@@ -127,6 +129,8 @@ def _add_crossref_keys(entries_by_id, cited_keys):
   BibTeX/biblatex entries can inherit fields from another entry via
   'crossref' (BibTeX/biblatex) or 'xdata' (biblatex), so those targets must
   be kept even if they are never cited directly.
+
+  Both 'entries_by_id' and 'cited_keys' must be keyed in lowercase.
   """
   to_process = list(cited_keys)
   while to_process:
@@ -136,7 +140,7 @@ def _add_crossref_keys(entries_by_id, cited_keys):
       continue
     for field in ('crossref', 'xdata'):
       for target in entry.get(field, '').split(','):
-        target = target.strip()
+        target = target.strip().lower()
         if target and target not in cited_keys:
           cited_keys.add(target)
           to_process.append(target)
@@ -151,7 +155,9 @@ def clean_bib_content(
 
   Args:
     bib_content: The contents of a .bib file, as a string.
-    cited_keys: Set of BibTeX keys that are cited in the paper. If it
+    cited_keys: Set of BibTeX keys that are cited in the paper, matched
+      case-insensitively (BibTeX resolves citation keys case-insensitively,
+      so '\\cite{hl7fhir}' finds '@inproceedings{HL7FHIR, ...}'). If it
       contains '*', every entry is kept.
     fields_to_delete: Iterable of field names (case-insensitive) to strip
       from every kept entry.
@@ -160,7 +166,7 @@ def clean_bib_content(
 
   Returns:
     A (cleaned_content, kept_keys) tuple: the cleaned .bib content as a
-    string, and the set of entry keys it contains.
+    string, and the set of entry keys it contains (in their original case).
   """
   bib_content = strip_comment_blocks(bib_content)
   # By default, bibtexparser silently drops entries whose type isn't one of
@@ -169,11 +175,11 @@ def clean_bib_content(
   # '@ieeetranbstctl' control entries. Keep every entry type as-is.
   parser = BibTexParser(common_strings=True, ignore_nonstandard_types=False)
   bib_database = bibtexparser.loads(bib_content, parser=parser)
-  entries_by_id = {entry['ID']: entry for entry in bib_database.entries}
+  entries_by_id = {entry['ID'].lower(): entry for entry in bib_database.entries}
 
   keep_all = '*' in cited_keys
   if not keep_all:
-    cited_keys = set(cited_keys)
+    cited_keys = {key.lower() for key in cited_keys}
     _add_crossref_keys(entries_by_id, cited_keys)
 
   # bibtexparser demotes entries it fails to parse (e.g. because of a
@@ -181,7 +187,7 @@ def clean_bib_content(
   # cited entry that way must not happen silently.
   for comment in bib_database.comments:
     for key in DEMOTED_ENTRY_KEY_PATTERN.findall(comment):
-      if keep_all or key in cited_keys:
+      if keep_all or key.lower() in cited_keys:
         logging.warning(
             'Bib entry %s is malformed (it could not be parsed as a BibTeX'
             ' entry) and was dropped from the cleaned .bib file. Fix the'
@@ -201,7 +207,7 @@ def clean_bib_content(
   kept_entries = []
   for entry in bib_database.entries:
     is_special = entry['ENTRYTYPE'].lower() in ALWAYS_KEEP_ENTRY_TYPES
-    if not keep_all and not is_special and entry['ID'] not in cited_keys:
+    if not keep_all and not is_special and entry['ID'].lower() not in cited_keys:
       logging.info('Removing uncited bib entry %s.', entry['ID'])
       continue
     if not is_special:
@@ -231,19 +237,23 @@ def warn_about_missing_cited_keys(cited_keys, found_keys):
   cleaned submission, so it must not go unnoticed.
 
   Args:
-    cited_keys: Set of BibTeX keys cited in the paper. If it contains '*'
+    cited_keys: Set of BibTeX keys cited in the paper, matched against
+      'found_keys' case-insensitively (as BibTeX does). If it contains '*'
       (i.e. a `\\nocite{*}` was found), the check is skipped, as the
       individual cited keys are unknown.
     found_keys: Set of entry keys present across all cleaned .bib files.
   """
   if '*' in cited_keys:
     return
-  for key in sorted(set(cited_keys) - set(found_keys)):
-    logging.warning(
-        'Cited bib entry %s was not found in any of the cleaned .bib files;'
-        ' its citations will not resolve in the cleaned submission.',
-        key,
-    )
+  found_keys = {key.lower() for key in found_keys}
+  for key in sorted(cited_keys):
+    if key.lower() not in found_keys:
+      logging.warning(
+          'Cited bib entry %s was not found in any of the cleaned .bib'
+          ' files; its citations will not resolve in the cleaned'
+          ' submission.',
+          key,
+      )
 
 
 def clean_bib_file(
