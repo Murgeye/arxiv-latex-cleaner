@@ -29,6 +29,7 @@ import regex
 from .bib_cleaner import clean_bib_file
 from .bib_cleaner import DEFAULT_BIB_FIELDS_TO_DELETE
 from .bib_cleaner import find_cited_keys
+from .bib_cleaner import warn_about_missing_cited_keys
 
 PDF_RESIZE_COMMAND = (
     'gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dNOPAUSE -dQUIET -dBATCH '
@@ -730,12 +731,14 @@ def _clean_referenced_bib_files(parameters, contents, splits):
   )
   fields_to_keep = parameters.get('bib_fields_to_keep', [])
 
+  found_keys = set()
   for bib_file in bib_files:
     out_path = os.path.join(parameters['output_folder'], bib_file)
     logging.info('Cleaning bib file %s.', bib_file)
-    clean_bib_file(
+    found_keys |= clean_bib_file(
         out_path, out_path, cited_keys, fields_to_delete, fields_to_keep
     )
+  warn_about_missing_cited_keys(cited_keys, found_keys)
 
 def _resize_and_copy_figures_if_referenced(parameters, contents, splits):
     """Modified to handle PNG to JPG conversion and reference updates."""
