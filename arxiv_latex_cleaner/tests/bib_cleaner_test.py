@@ -129,6 +129,20 @@ class FindCitedKeysTest(unittest.TestCase):
         },
     )
 
+  def test_allows_whitespace_before_arguments(self):
+    # TeX skips whitespace after a control word, so all of these compile as
+    # regular citations.
+    tex_content = (
+        '\\cite {key_a}\n'
+        '\\cite\n{key_b}\n'
+        '\\citet * {key_c}\n'
+        '\\citep [see] [p.~2] {key_d}\n'
+    )
+    self.assertEqual(
+        bib_cleaner.find_cited_keys(tex_content),
+        {'key_a', 'key_b', 'key_c', 'key_d'},
+    )
+
   def test_ignores_non_citation_commands(self):
     tex_content = r'\cref{fig:one} \label{sec:intro} \ref{eq:1}'
     self.assertEqual(bib_cleaner.find_cited_keys(tex_content), set())
@@ -275,6 +289,23 @@ class CleanBibContentTest(unittest.TestCase):
     )
     self.assertEqual(kept_keys, {'smith2020', 'IEEEexample:BSTcontrol'})
 
+  def test_matches_cited_keys_case_insensitively(self):
+    # BibTeX resolves citation keys case-insensitively, so a cited entry
+    # must be kept even if the \cite command uses different casing.
+    cleaned, kept_keys = bib_cleaner.clean_bib_content(
+        SAMPLE_BIB, {'SMITH2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
+    )
+    self.assertIn('smith2020', cleaned)
+    self.assertIn('smith2020', kept_keys)
+
+  def test_matches_crossref_targets_case_insensitively(self):
+    bib = SAMPLE_BIB.replace('crossref = {proc2021}', 'crossref = {PROC2021}')
+    cleaned, _ = bib_cleaner.clean_bib_content(
+        bib, {'CHILD2021'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
+    )
+    self.assertIn('child2021', cleaned)
+    self.assertIn('proc2021', cleaned)
+
 
 # An entry whose 'note' field was closed early and its remainder "commented
 # out" with a leading '%'. '%' is not comment syntax in .bib files, so the
@@ -317,6 +348,13 @@ class MalformedEntryWarningTest(unittest.TestCase):
     with self.assertNoLogs(level='WARNING'):
       bib_cleaner.clean_bib_content(MALFORMED_ENTRY_BIB, {'smith2020'}, [])
 
+  def test_warning_matches_case_insensitively(self):
+    with self.assertLogs(level='WARNING') as logs:
+      bib_cleaner.clean_bib_content(
+          MALFORMED_ENTRY_BIB, {'MALFORMED2013', 'smith2020'}, []
+      )
+    self.assertTrue(any('malformed2013' in line for line in logs.output))
+
 
 class WarnAboutMissingCitedKeysTest(unittest.TestCase):
 
@@ -333,6 +371,10 @@ class WarnAboutMissingCitedKeysTest(unittest.TestCase):
       bib_cleaner.warn_about_missing_cited_keys(
           {'smith2020'}, {'smith2020', 'extra2021'}
       )
+
+  def test_no_warning_on_case_mismatch(self):
+    with self.assertNoLogs(level='WARNING'):
+      bib_cleaner.warn_about_missing_cited_keys({'SMITH2020'}, {'smith2020'})
 
   def test_skipped_on_nocite_star(self):
     with self.assertNoLogs(level='WARNING'):
