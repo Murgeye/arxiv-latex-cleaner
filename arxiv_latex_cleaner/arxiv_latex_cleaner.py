@@ -915,7 +915,6 @@ def run_arxiv_cleaner(parameters):
       r'\.backup$',
       r'\.gitignore$',
       r'\.DS_Store$',
-      r'\.svg$',
       r'^\.idea',
       r'\.dpth$',
       r'\.md5$',
@@ -935,6 +934,7 @@ def run_arxiv_cleaner(parameters):
           r'\.jpg$',
           r'\.jpeg$',
           r'\.pdf$',
+          r'\.svg$',
       ],
   })
 
