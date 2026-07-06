@@ -292,7 +292,10 @@ else:
 if final_args.get("verbose", False):
   logging.basicConfig(level=logging.INFO)
 else:
-  logging.basicConfig(level=logging.ERROR)
+  # WARNING rather than ERROR: warnings flag silent data loss (e.g. a cited
+  # bib entry dropped because it could not be parsed) and must be visible
+  # without --verbose.
+  logging.basicConfig(level=logging.WARNING)
 
 run_arxiv_cleaner(final_args)
 exit(0)

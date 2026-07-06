@@ -148,7 +148,7 @@ class FindCitedKeysTest(unittest.TestCase):
 class CleanBibContentTest(unittest.TestCase):
 
   def test_removes_uncited_entries(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'smith2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertIn('smith2020', cleaned)
@@ -157,7 +157,7 @@ class CleanBibContentTest(unittest.TestCase):
   def test_strips_default_noisy_fields(self):
     # Only fields that are pure reference-manager bookkeeping (never
     # rendered by any bibliography style) are stripped by default.
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'smith2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertNotIn('abstract', cleaned)
@@ -171,14 +171,14 @@ class CleanBibContentTest(unittest.TestCase):
     # 'url'/'doi' can be rendered depending on the bibliography style (e.g.
     # IEEEtran.bst), so they must survive unless explicitly opted into
     # bib_fields_to_delete.
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'smith2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertIn('url', cleaned)
     self.assertIn('doi', cleaned)
 
   def test_strips_style_dependent_fields_when_explicitly_requested(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB,
         {'smith2020'},
         bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE + ['url', 'doi'],
@@ -187,14 +187,14 @@ class CleanBibContentTest(unittest.TestCase):
     self.assertNotIn('doi', cleaned)
 
   def test_keeps_all_entries_on_star(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'*'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertIn('smith2020', cleaned)
     self.assertIn('unused2099', cleaned)
 
   def test_keeps_crossref_target_of_cited_entry(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'child2021'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertIn('child2021', cleaned)
@@ -203,7 +203,7 @@ class CleanBibContentTest(unittest.TestCase):
     self.assertNotIn('unused2099', cleaned)
 
   def test_fields_to_keep_overrides_fields_to_delete(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB,
         {'smith2020'},
         fields_to_delete=['url', 'doi'],
@@ -216,7 +216,7 @@ class CleanBibContentTest(unittest.TestCase):
     # bibtexparser's default parser silently discards entry types outside a
     # small standard set (e.g. '@online', '@thesis'); make sure we override
     # that so cited non-standard entries survive.
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB,
         {'web2022', 'phd2015'},
         bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE,
@@ -225,7 +225,7 @@ class CleanBibContentTest(unittest.TestCase):
     self.assertIn('phd2015', cleaned)
 
   def test_always_keeps_ieeetranbstctl_even_if_uncited(self):
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'smith2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
     )
     self.assertIn('IEEEexample:BSTcontrol', cleaned)
@@ -237,7 +237,7 @@ class CleanBibContentTest(unittest.TestCase):
 
   def test_never_deletes_id_or_entrytype(self):
     # A user accidentally listing 'ID'/'ENTRYTYPE' should not corrupt output.
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         SAMPLE_BIB, {'smith2020'}, fields_to_delete=['id', 'entrytype']
     )
     self.assertIn('@article{smith2020', cleaned)
@@ -252,7 +252,7 @@ class CleanBibContentTest(unittest.TestCase):
         '@article{disabled2020, author = {X}, title = {Y}, year = {2020}}\n'
         '}\n'
     )
-    cleaned = bib_cleaner.clean_bib_content(
+    cleaned, _ = bib_cleaner.clean_bib_content(
         bib, {'smith2020', 'disabled2020'}, []
     )
     self.assertNotIn('disabled2020', cleaned)
@@ -265,9 +265,78 @@ class CleanBibContentTest(unittest.TestCase):
         '@comment{,\n}}\n\n'
         '@article{smith2020, author = {Smith, J.}, title = {T}, year = {2020}}\n'
     )
-    cleaned = bib_cleaner.clean_bib_content(bib, {'smith2020'}, [])
+    cleaned, _ = bib_cleaner.clean_bib_content(bib, {'smith2020'}, [])
     self.assertNotIn('@comment', cleaned.lower())
     self.assertIn('smith2020', cleaned)
+
+  def test_returns_kept_keys(self):
+    _, kept_keys = bib_cleaner.clean_bib_content(
+        SAMPLE_BIB, {'smith2020'}, bib_cleaner.DEFAULT_BIB_FIELDS_TO_DELETE
+    )
+    self.assertEqual(kept_keys, {'smith2020', 'IEEEexample:BSTcontrol'})
+
+
+# An entry whose 'note' field was closed early and its remainder "commented
+# out" with a leading '%'. '%' is not comment syntax in .bib files, so the
+# entry is malformed (stray unbalanced '}'), and bibtexparser demotes the
+# whole entry to a comment instead of parsing it.
+MALFORMED_ENTRY_BIB = r"""
+@article{malformed2013,
+  title = {A Method},
+  note = {Publisher: Taylor \& Francis},
+%\_eprint: https://doi.org/10.1057/ejis.2012.26},
+  keywords = {taxonomy},
+}
+
+@article{smith2020,
+  author = {Smith, J.},
+  title = {A Cited Paper},
+  year = {2020}
+}
+"""
+
+
+class MalformedEntryWarningTest(unittest.TestCase):
+
+  def test_warns_when_cited_entry_cannot_be_parsed(self):
+    with self.assertLogs(level='WARNING') as logs:
+      cleaned, kept_keys = bib_cleaner.clean_bib_content(
+          MALFORMED_ENTRY_BIB, {'malformed2013', 'smith2020'}, []
+      )
+    self.assertTrue(any('malformed2013' in line for line in logs.output))
+    # The malformed entry is still dropped; the warning is the safety net.
+    self.assertNotIn('malformed2013', cleaned)
+    self.assertEqual(kept_keys, {'smith2020'})
+
+  def test_warns_when_keeping_all_entries(self):
+    with self.assertLogs(level='WARNING') as logs:
+      bib_cleaner.clean_bib_content(MALFORMED_ENTRY_BIB, {'*'}, [])
+    self.assertTrue(any('malformed2013' in line for line in logs.output))
+
+  def test_no_warning_for_uncited_malformed_entry(self):
+    with self.assertNoLogs(level='WARNING'):
+      bib_cleaner.clean_bib_content(MALFORMED_ENTRY_BIB, {'smith2020'}, [])
+
+
+class WarnAboutMissingCitedKeysTest(unittest.TestCase):
+
+  def test_warns_for_key_missing_from_all_bib_files(self):
+    with self.assertLogs(level='WARNING') as logs:
+      bib_cleaner.warn_about_missing_cited_keys(
+          {'smith2020', 'missing2024'}, {'smith2020'}
+      )
+    self.assertEqual(len(logs.output), 1)
+    self.assertIn('missing2024', logs.output[0])
+
+  def test_no_warning_when_all_keys_found(self):
+    with self.assertNoLogs(level='WARNING'):
+      bib_cleaner.warn_about_missing_cited_keys(
+          {'smith2020'}, {'smith2020', 'extra2021'}
+      )
+
+  def test_skipped_on_nocite_star(self):
+    with self.assertNoLogs(level='WARNING'):
+      bib_cleaner.warn_about_missing_cited_keys({'*'}, set())
 
 
 if __name__ == '__main__':

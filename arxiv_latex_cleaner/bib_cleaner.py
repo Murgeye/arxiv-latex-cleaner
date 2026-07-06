@@ -39,6 +39,12 @@ COMMENT_BLOCK_PATTERN = regex.compile(
     r'@comment\s*\{((?:[^{}]+|\{(?1)\})*)\}', regex.IGNORECASE
 )
 
+# Matches the head of a BibTeX entry ('@article{somekey,'), capturing the
+# key. Used to recognize entries that bibtexparser failed to parse (e.g.
+# because of a malformed field) and demoted to plain comments, which would
+# otherwise be dropped without a trace.
+DEMOTED_ENTRY_KEY_PATTERN = regex.compile(r'@[A-Za-z]+\s*\{\s*([^,\s{}]+)\s*,')
+
 # Fields that are reference-manager bookkeeping (Zotero/Mendeley/JabRef/
 # BibDesk) or otherwise documented as unused by standard bibliography
 # styles, so stripping them by default never changes how the compiled
@@ -153,7 +159,8 @@ def clean_bib_content(
       'fields_to_delete', i.e. that must never be stripped.
 
   Returns:
-    The cleaned .bib content, as a string.
+    A (cleaned_content, kept_keys) tuple: the cleaned .bib content as a
+    string, and the set of entry keys it contains.
   """
   bib_content = strip_comment_blocks(bib_content)
   # By default, bibtexparser silently drops entries whose type isn't one of
@@ -164,15 +171,28 @@ def clean_bib_content(
   bib_database = bibtexparser.loads(bib_content, parser=parser)
   entries_by_id = {entry['ID']: entry for entry in bib_database.entries}
 
-  # Leftover stray braces from a malformed '@comment{...}' in the source (or
-  # any other free text sitting between entries) are themselves picked up by
-  # bibtexparser as comments; drop those too so no comment text survives.
-  bib_database.comments = []
-
   keep_all = '*' in cited_keys
   if not keep_all:
     cited_keys = set(cited_keys)
     _add_crossref_keys(entries_by_id, cited_keys)
+
+  # bibtexparser demotes entries it fails to parse (e.g. because of a
+  # malformed field) to plain comments, which get dropped below. Losing a
+  # cited entry that way must not happen silently.
+  for comment in bib_database.comments:
+    for key in DEMOTED_ENTRY_KEY_PATTERN.findall(comment):
+      if keep_all or key in cited_keys:
+        logging.warning(
+            'Bib entry %s is malformed (it could not be parsed as a BibTeX'
+            ' entry) and was dropped from the cleaned .bib file. Fix the'
+            ' entry in the source .bib file.',
+            key,
+        )
+
+  # Leftover stray braces from a malformed '@comment{...}' in the source (or
+  # any other free text sitting between entries) are themselves picked up by
+  # bibtexparser as comments; drop those too so no comment text survives.
+  bib_database.comments = []
 
   fields_to_delete = {f.lower() for f in fields_to_delete} - {
       f.lower() for f in fields_to_keep
@@ -197,19 +217,50 @@ def clean_bib_content(
   writer = BibTexWriter()
   writer.indent = '  '
   writer.order_entries_by = None
-  return bibtexparser.dumps(bib_database, writer)
+  kept_keys = {entry['ID'] for entry in kept_entries}
+  return bibtexparser.dumps(bib_database, writer), kept_keys
+
+
+def warn_about_missing_cited_keys(cited_keys, found_keys):
+  """Warns about cited keys absent from all cleaned .bib files.
+
+  A cited key can end up missing because its entry is malformed (see the
+  demoted-entry warning in `clean_bib_content`), lives in a .bib file that
+  is not part of the submission, or is simply a typo in the \\cite command.
+  In all cases the citation will not resolve when arXiv compiles the
+  cleaned submission, so it must not go unnoticed.
+
+  Args:
+    cited_keys: Set of BibTeX keys cited in the paper. If it contains '*'
+      (i.e. a `\\nocite{*}` was found), the check is skipped, as the
+      individual cited keys are unknown.
+    found_keys: Set of entry keys present across all cleaned .bib files.
+  """
+  if '*' in cited_keys:
+    return
+  for key in sorted(set(cited_keys) - set(found_keys)):
+    logging.warning(
+        'Cited bib entry %s was not found in any of the cleaned .bib files;'
+        ' its citations will not resolve in the cleaned submission.',
+        key,
+    )
 
 
 def clean_bib_file(
     input_path, output_path, cited_keys, fields_to_delete, fields_to_keep=()
 ):
-  """Reads a .bib file from 'input_path', cleans it, writes it to 'output_path'."""
+  """Reads a .bib file from 'input_path', cleans it, writes it to 'output_path'.
+
+  Returns the set of entry keys kept in 'output_path'.
+  """
   with open(input_path, 'r', encoding='utf-8') as f:
     bib_content = f.read()
 
-  cleaned_content = clean_bib_content(
+  cleaned_content, kept_keys = clean_bib_content(
       bib_content, cited_keys, fields_to_delete, fields_to_keep
   )
 
   with open(output_path, 'w', encoding='utf-8') as f:
     f.write(cleaned_content)
+
+  return kept_keys
